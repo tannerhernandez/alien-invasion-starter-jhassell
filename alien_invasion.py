@@ -1,53 +1,236 @@
 import pygame
 import random
 import math
+import settings
+import ship as ship_module
+import bullet as bullet_module
 
 # Initialize pygame
 pygame.init()
 
-# Screen dimensions
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 600
-
-# Colors
-MIDNIGHT_PURPLE = (25, 25, 112)  # Midnight blue-purple
-WHITE = (255, 255, 255)
-YELLOW = (255, 255, 200)
-LIGHT_BLUE = (173, 216, 230)
-GALAXY_SILVER = (192, 192, 200)  # Galaxy silver
-BRIGHT_SILVER = (220, 220, 235)
-ORANGE = (255, 165, 0)
-ALIEN_GREEN = (0, 255, 100)
-ALIEN_RED = (255, 50, 50)
-ENEMY_BULLET = (255, 100, 100)
-
 # Create screen
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Alien Invasion")
+screen = pygame.display.set_mode((settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT))
+pygame.display.set_caption(settings.SCREEN_TITLE)
 
 # Set clock for 60 FPS
 clock = pygame.time.Clock()
-FPS = 60
 
 # Generate stars for galaxy effect
 stars = []
-for _ in range(200):
+for _ in range(settings.STAR_COUNT):
     star = {
-        'x': random.randint(0, SCREEN_WIDTH),
-        'y': random.randint(0, SCREEN_HEIGHT),
-        'size': random.randint(1, 3),
-        'color': random.choice([WHITE, YELLOW, LIGHT_BLUE]),
-        'brightness': random.randint(100, 255)
+        'x': random.randint(0, settings.SCREEN_WIDTH),
+        'y': random.randint(0, settings.SCREEN_HEIGHT),
+        'size': random.randint(settings.STAR_MIN_SIZE, settings.STAR_MAX_SIZE),
+        'color': random.choice([settings.WHITE, settings.YELLOW, settings.LIGHT_BLUE]),
+        'brightness': random.randint(settings.STAR_MIN_BRIGHTNESS, settings.STAR_MAX_BRIGHTNESS)
     }
     stars.append(star)
 
 
-# Ship class
-class Ship:
-    def __init__(self):
-        self.width = 50
-        self.height = 40
-        self.x = SCREEN_WIDTH // 2
+# Alien class (kept in main file for now, or could be moved to alien.py)
+class Alien:
+    def __init__(self, x, y, pattern_type=0):
+        self.width = settings.ALIEN_WIDTH
+        self.height = settings.ALIEN_HEIGHT
+        self.x = x
+        self.y = y
+        self.start_x = x
+        self.pattern_type = pattern_type
+        self.pattern_offset = 0
+        self.speed = settings.ALIEN_SPEED
+        self.color = settings.ALIEN_GREEN if pattern_type == 0 else settings.ALIEN_RED
+        
+        # Health
+        self.max_health = settings.ALIEN_MAX_HEALTH
+        self.health = self.max_health
+        
+    def update(self):
+        self.pattern_offset += 1
+        
+        if self.pattern_type == 0:
+            # Horizontal zigzag pattern
+            self.x = self.start_x + math.sin(self.pattern_offset * 0.05) * 100
+        elif self.pattern_type == 1:
+            # Simple left-right sweep
+            self.x = self.start_x + math.sin(self.pattern_offset * 0.03) * 80
+        elif self.pattern_type == 2:
+            # Figure-8 pattern
+            self.x = self.start_x + math.sin(self.pattern_offset * 0.04) * 60
+            self.y += math.sin(self.pattern_offset * 0.08) * 0.5
+        
+        # Keep within screen bounds
+        self.x = max(self.width, min(settings.SCREEN_WIDTH - self.width, self.x))
+    
+    def draw(self, surface):
+        # Draw alien body (oval shape)
+        pygame.draw.ellipse(surface, self.color, 
+                          (self.x - self.width // 2, self.y - self.height // 2,
+                           self.width, self.height), 2)
+        
+        # Draw eyes
+        pygame.draw.circle(surface, (255, 255, 0), (self.x - 8, self.y - 5), 4)
+        pygame.draw.circle(surface, (255, 255, 0), (self.x + 8, self.y - 5), 4)
+        pygame.draw.circle(surface, (0, 0, 0), (self.x - 8, self.y - 5), 2)
+        pygame.draw.circle(surface, (0, 0, 0), (self.x + 8, self.y - 5), 2)
+        
+        # Draw antennae
+        pygame.draw.line(surface, self.color, (self.x - 10, self.y - self.height // 2),
+                        (self.x - 15, self.y - self.height), 2)
+        pygame.draw.line(surface, self.color, (self.x + 10, self.y - self.height // 2),
+                        (self.x + 15, self.y - self.height), 2)
+        pygame.draw.circle(surface, self.color, (self.x - 15, self.y - self.height), 3)
+        pygame.draw.circle(surface, self.color, (self.x + 15, self.y - self.height), 3)
+
+
+# Enemy bullet class
+class EnemyBullet:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.width = settings.ENEMY_BULLET_WIDTH
+        self.height = settings.ENEMY_BULLET_HEIGHT
+        self.speed = settings.ENEMY_BULLET_SPEED
+        self.color = settings.ENEMY_BULLET
+        self.damage = settings.ENEMY_BULLET_DAMAGE
+    
+    def move(self):
+        self.y += self.speed
+    
+    def draw(self, surface):
+        pygame.draw.rect(surface, self.color,
+                        (self.x - self.width // 2, self.y, self.width, self.height))
+        pygame.draw.rect(surface, (255, 150, 150),
+                        (self.x - 2, self.y, 2, self.height))
+    
+    def is_off_screen(self):
+        return self.y > settings.SCREEN_HEIGHT
+
+
+# Create ship
+player_ship = ship_module.Ship()
+
+# Bullets list
+bullets = []
+
+# Create aliens in top third
+aliens = []
+for i in range(5):
+    aliens.append(Alien(150 + i * 150, 80, i % 3))
+
+# Enemy bullets list
+enemy_bullets = []
+
+# Auto-fire timer
+auto_fire_counter = 0
+
+# Main game loop
+running = True
+while running:
+    # Event handling
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYUP:
+            if event.key == pygame.K_SPACE:
+                # Release charge - fire heavy attack if charged
+                if player_ship.release_charge():
+                    bullets.append(bullet_module.Bullet(player_ship.x, player_ship.y - player_ship.height // 2, is_heavy=True))
+    
+    # Get pressed keys
+    keys = pygame.key.get_pressed()
+    
+    # Handle charging
+    if keys[pygame.K_SPACE]:
+        player_ship.start_charge()
+    player_ship.update_charge()
+    
+    # Move ship
+    player_ship.move(keys)
+    
+    # Auto-fire bullets (constant firing)
+    auto_fire_counter += 1
+    if auto_fire_counter >= settings.AUTO_FIRE_DELAY:
+        auto_fire_counter = 0
+        # Don't auto-fire if fully charged (wait for release)
+        if not player_ship.is_charged:
+            bullets.append(bullet_module.Bullet(player_ship.x, player_ship.y - player_ship.height // 2, is_heavy=False))
+    
+    # Move bullets and check collision with aliens
+    for bullet in bullets[:]:
+        bullet.move()
+        if bullet.is_off_screen():
+            bullets.remove(bullet)
+        else:
+            # Check collision with aliens
+            for alien in aliens[:]:
+                if (abs(bullet.x - alien.x) < (bullet.width + alien.width) // 2 and
+                    bullet.y < alien.y + alien.height // 2 and
+                    bullet.y + bullet.height > alien.y - alien.height // 2):
+                    alien.health -= bullet.damage
+                    bullets.remove(bullet)
+                    if alien.health <= 0:
+                        aliens.remove(alien)
+                    break
+    
+    # Update aliens
+    for alien in aliens:
+        alien.update()
+    
+    # Alien fires projectiles (slow rate)
+    if random.randint(1, settings.ALIEN_FIRE_RATE) == 1:
+        firing_alien = random.choice(aliens)
+        enemy_bullets.append(EnemyBullet(firing_alien.x, firing_alien.y + firing_alien.height // 2))
+    
+    # Move enemy bullets and check collision with ship
+    for eb in enemy_bullets[:]:
+        eb.move()
+        if eb.is_off_screen():
+            enemy_bullets.remove(eb)
+        else:
+            # Check collision with ship
+            if (abs(eb.x - player_ship.x) < (eb.width + player_ship.width) // 2 and
+                eb.y < player_ship.y + player_ship.height // 2 and
+                eb.y + eb.height > player_ship.y - player_ship.height // 2):
+                player_ship.health -= eb.damage
+                enemy_bullets.remove(eb)
+                if player_ship.health <= 0:
+                    running = False  # Game over
+    
+    # Draw midnight purple background
+    screen.fill(settings.MIDNIGHT_PURPLE)
+    
+    # Draw stars for galaxy effect
+    for star in stars:
+        brightness = (star['brightness'] + random.randint(-10, 10)) % 256
+        brightness = max(100, min(255, brightness))
+        color = list(star['color'])
+        color = tuple(min(255, c * brightness // 255) for c in star['color'])
+        pygame.draw.circle(screen, color, (star['x'], star['y']), star['size'])
+    
+    # Draw ship
+    player_ship.draw(screen)
+    
+    # Draw bullets
+    for bullet in bullets:
+        bullet.draw(screen)
+    
+    # Draw aliens
+    for alien in aliens:
+        alien.draw(screen)
+    
+    # Draw enemy bullets
+    for eb in enemy_bullets:
+        eb.draw(screen)
+    
+    # Update display
+    pygame.display.flip()
+    
+    # Maintain 60 FPS
+    clock.tick(settings.FPS)
+
+# Quit pygame
+pygame.quit()
         self.y = SCREEN_HEIGHT - 80
         self.speed = 5
         self.color = GALAXY_SILVER

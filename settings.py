@@ -1,0 +1,62 @@
+# Game Settings
+# All configuration values in one place
+
+# Screen dimensions
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 600
+SCREEN_TITLE = "Alien Invasion"
+
+# Colors
+MIDNIGHT_PURPLE = (25, 25, 112)  # Midnight blue-purple
+WHITE = (255, 255, 255)
+YELLOW = (255, 255, 200)
+LIGHT_BLUE = (173, 216, 230)
+GALAXY_SILVER = (192, 192, 200)  # Galaxy silver
+BRIGHT_SILVER = (220, 220, 235)
+ORANGE = (255, 165, 0)
+ALIEN_GREEN = (0, 255, 100)
+ALIEN_RED = (255, 50, 50)
+ENEMY_BULLET = (255, 100, 100)
+
+# Frame rate
+FPS = 60
+
+# Star field settings
+STAR_COUNT = 200
+STAR_MIN_SIZE = 1
+STAR_MAX_SIZE = 3
+STAR_MIN_BRIGHTNESS = 100
+STAR_MAX_BRIGHTNESS = 255
+
+# Ship settings
+SHIP_WIDTH = 50
+SHIP_HEIGHT = 40
+SHIP_SPEED = 5
+SHIP_MAX_HEALTH = 10
+
+# Bullet settings
+BULLET_SPEED_NORMAL = 10
+BULLET_SPEED_HEAVY = 12
+BULLET_WIDTH_NORMAL = 4
+BULLET_HEIGHT_NORMAL = 15
+BULLET_WIDTH_HEAVY = 10
+BULLET_HEIGHT_HEAVY = 30
+BULLET_DAMAGE_NORMAL = 1
+BULLET_DAMAGE_HEAVY = 2
+
+# Charge attack settings
+CHARGE_MAX = 60  # 1 second at 60 FPS
+AUTO_FIRE_DELAY = 15  # Frames between auto-shots
+
+# Alien settings
+ALIEN_WIDTH = 40
+ALIEN_HEIGHT = 30
+ALIEN_SPEED = 2
+ALIEN_MAX_HEALTH = 10
+ALIEN_FIRE_RATE = 90  # Frames between alien shots
+
+# Enemy bullet settings
+ENEMY_BULLET_SPEED = 4
+ENEMY_BULLET_WIDTH = 6
+ENEMY_BULLET_HEIGHT = 12
+ENEMY_BULLET_DAMAGE = 1
