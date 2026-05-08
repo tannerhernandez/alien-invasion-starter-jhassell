@@ -15,6 +15,18 @@ pygame.display.set_caption(settings.SCREEN_TITLE)
 # Set clock for 60 FPS
 clock = pygame.time.Clock()
 
+# Start menu fonts and button
+font = pygame.font.SysFont(None, 48)
+level_font = pygame.font.SysFont(None, 36)
+game_over_font = pygame.font.SysFont(None, 72)
+button_width, button_height = 300, 80
+start_button_rect = pygame.Rect(
+    (settings.SCREEN_WIDTH - button_width) // 2,
+    (settings.SCREEN_HEIGHT - button_height) // 2,
+    button_width,
+    button_height
+)
+
 # Generate stars for galaxy effect
 stars = []
 for _ in range(settings.STAR_COUNT):
@@ -41,26 +53,8 @@ class Alien:
         self.speed = settings.ALIEN_SPEED
         self.color = settings.ALIEN_GREEN if pattern_type == 0 else settings.ALIEN_RED
         
-        # Health
-        self.max_health = settings.ALIEN_MAX_HEALTH
-        self.health = self.max_health
-        
     def update(self):
-        self.pattern_offset += 1
-        
-        if self.pattern_type == 0:
-            # Horizontal zigzag pattern
-            self.x = self.start_x + math.sin(self.pattern_offset * 0.05) * 100
-        elif self.pattern_type == 1:
-            # Simple left-right sweep
-            self.x = self.start_x + math.sin(self.pattern_offset * 0.03) * 80
-        elif self.pattern_type == 2:
-            # Figure-8 pattern
-            self.x = self.start_x + math.sin(self.pattern_offset * 0.04) * 60
-            self.y += math.sin(self.pattern_offset * 0.08) * 0.5
-        
-        # Keep within screen bounds
-        self.x = max(self.width, min(settings.SCREEN_WIDTH - self.width, self.x))
+        self.x += self.speed * alien_direction
     
     def draw(self, surface):
         # Draw alien body (oval shape)
@@ -113,444 +107,247 @@ player_ship = ship_module.Ship()
 # Bullets list
 bullets = []
 
+# Alien formation helper
+
+def create_alien_formation(level, speed):
+    alien_count = 5 + (level - 1)
+    formation = []
+    cols = 6
+    x_start = 100
+    x_spacing = 110
+    y_start = 80
+    y_spacing = 70
+    for i in range(alien_count):
+        row = i // cols
+        col = i % cols
+        x = x_start + col * x_spacing
+        y = y_start + row * y_spacing
+        alien = Alien(x, y, i % 3)
+        alien.speed = speed
+        formation.append(alien)
+    return formation
+
+level = 1
+alien_speed = settings.ALIEN_SPEED
+score = 0
+
+def reset_game():
+    global player_ship, bullets, enemy_bullets, aliens, alien_direction, auto_fire_counter, level, alien_speed, score
+    player_ship = ship_module.Ship()
+    bullets = []
+    enemy_bullets = []
+    level = 1
+    alien_speed = settings.ALIEN_SPEED
+    score = 0
+    alien_direction = 1
+    auto_fire_counter = 0
+    aliens = create_alien_formation(level, alien_speed)
+
 # Create aliens in top third
-aliens = []
-for i in range(5):
-    aliens.append(Alien(150 + i * 150, 80, i % 3))
+aliens = create_alien_formation(level, alien_speed)
 
-# Enemy bullets list
-enemy_bullets = []
+# Start menu draw helper
 
-# Auto-fire timer
-auto_fire_counter = 0
-
-# Main game loop
-running = True
-while running:
-    # Event handling
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-        elif event.type == pygame.KEYUP:
-            if event.key == pygame.K_SPACE:
-                # Release charge - fire heavy attack if charged
-                if player_ship.release_charge():
-                    bullets.append(bullet_module.Bullet(player_ship.x, player_ship.y - player_ship.height // 2, is_heavy=True))
-    
-    # Get pressed keys
-    keys = pygame.key.get_pressed()
-    
-    # Handle charging
-    if keys[pygame.K_SPACE]:
-        player_ship.start_charge()
-    player_ship.update_charge()
-    
-    # Move ship
-    player_ship.move(keys)
-    
-    # Auto-fire bullets (constant firing)
-    auto_fire_counter += 1
-    if auto_fire_counter >= settings.AUTO_FIRE_DELAY:
-        auto_fire_counter = 0
-        # Don't auto-fire if fully charged (wait for release)
-        if not player_ship.is_charged:
-            bullets.append(bullet_module.Bullet(player_ship.x, player_ship.y - player_ship.height // 2, is_heavy=False))
-    
-    # Move bullets and check collision with aliens
-    for bullet in bullets[:]:
-        bullet.move()
-        if bullet.is_off_screen():
-            bullets.remove(bullet)
-        else:
-            # Check collision with aliens
-            for alien in aliens[:]:
-                if (abs(bullet.x - alien.x) < (bullet.width + alien.width) // 2 and
-                    bullet.y < alien.y + alien.height // 2 and
-                    bullet.y + bullet.height > alien.y - alien.height // 2):
-                    alien.health -= bullet.damage
-                    bullets.remove(bullet)
-                    if alien.health <= 0:
-                        aliens.remove(alien)
-                    break
-    
-    # Update aliens
-    for alien in aliens:
-        alien.update()
-    
-    # Alien fires projectiles (slow rate)
-    if random.randint(1, settings.ALIEN_FIRE_RATE) == 1:
-        firing_alien = random.choice(aliens)
-        enemy_bullets.append(EnemyBullet(firing_alien.x, firing_alien.y + firing_alien.height // 2))
-    
-    # Move enemy bullets and check collision with ship
-    for eb in enemy_bullets[:]:
-        eb.move()
-        if eb.is_off_screen():
-            enemy_bullets.remove(eb)
-        else:
-            # Check collision with ship
-            if (abs(eb.x - player_ship.x) < (eb.width + player_ship.width) // 2 and
-                eb.y < player_ship.y + player_ship.height // 2 and
-                eb.y + eb.height > player_ship.y - player_ship.height // 2):
-                player_ship.health -= eb.damage
-                enemy_bullets.remove(eb)
-                if player_ship.health <= 0:
-                    running = False  # Game over
-    
-    # Draw midnight purple background
+def draw_start_menu():
     screen.fill(settings.MIDNIGHT_PURPLE)
-    
-    # Draw stars for galaxy effect
     for star in stars:
         brightness = (star['brightness'] + random.randint(-10, 10)) % 256
         brightness = max(100, min(255, brightness))
-        color = list(star['color'])
         color = tuple(min(255, c * brightness // 255) for c in star['color'])
         pygame.draw.circle(screen, color, (star['x'], star['y']), star['size'])
-    
-    # Draw ship
-    player_ship.draw(screen)
-    
-    # Draw bullets
-    for bullet in bullets:
-        bullet.draw(screen)
-    
-    # Draw aliens
-    for alien in aliens:
-        alien.draw(screen)
-    
-    # Draw enemy bullets
-    for eb in enemy_bullets:
-        eb.draw(screen)
-    
-    # Update display
+
+    pygame.draw.rect(screen, settings.ALIEN_GREEN, start_button_rect)
+    pygame.draw.rect(screen, settings.WHITE, start_button_rect, 4)
+    start_text = font.render("START GAME", True, settings.MIDNIGHT_PURPLE)
+    start_text_rect = start_text.get_rect(center=start_button_rect.center)
+    screen.blit(start_text, start_text_rect)
     pygame.display.flip()
-    
-    # Maintain 60 FPS
+
+# Show start menu until the button is clicked
+running = True
+menu_active = True
+while menu_active:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            menu_active = False
+            running = False
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if start_button_rect.collidepoint(event.pos):
+                menu_active = False
+
+    draw_start_menu()
     clock.tick(settings.FPS)
 
-# Quit pygame
-pygame.quit()
-        self.y = SCREEN_HEIGHT - 80
-        self.speed = 5
-        self.color = GALAXY_SILVER
-        self.bullet_color = BRIGHT_SILVER
-        
-        # Heavy attack charging
-        self.is_charging = False
-        self.charge_level = 0
-        self.max_charge = 60  # 1 second at 60 FPS
-        self.is_charged = False
-        
-        # Health
-        self.max_health = 10
-        self.health = self.max_health
-        
-    def move(self, keys):
-        if keys[pygame.K_LEFT] and self.x > self.width // 2:
-            self.x -= self.speed
-        if keys[pygame.K_RIGHT] and self.x < SCREEN_WIDTH - self.width // 2:
-            self.x += self.speed
-        if keys[pygame.K_UP] and self.y > self.height // 2:
-            self.y -= self.speed
-        if keys[pygame.K_DOWN] and self.y < SCREEN_HEIGHT - self.height // 2:
-            self.y += self.speed
-    
-    def start_charge(self):
-        self.is_charging = True
-    
-    def update_charge(self):
-        if self.is_charging and self.charge_level < self.max_charge:
-            self.charge_level += 1
-        if self.charge_level >= self.max_charge:
-            self.is_charged = True
-    
-    def release_charge(self):
-        if self.is_charged:
-            self.is_charged = False
-            self.charge_level = 0
-            self.is_charging = False
-            return True  # Fire heavy attack
-        self.charge_level = 0
-        self.is_charging = False
-        self.is_charged = False
-        return False
-    
-    def draw(self, surface):
-        # Draw ship body (triangle shape)
-        points = [
-            (self.x, self.y - self.height // 2),  # Top
-            (self.x - self.width // 2, self.y + self.height // 2),  # Bottom left
-            (self.x, self.y + self.height // 4),  # Bottom center
-            (self.x + self.width // 2, self.y + self.height // 2),  # Bottom right
-        ]
-        pygame.draw.polygon(surface, self.color, points, 2)
-        pygame.draw.polygon(surface, BRIGHT_SILVER, points[:3], 1)
-        
-        # Draw engine glow
-        pygame.draw.circle(surface, LIGHT_BLUE, (self.x, self.y + self.height // 2), 5)
-        
-        # Draw charge indicator
-        if self.is_charging:
-            charge_width = (self.charge_level / self.max_charge) * 50
-            charge_color = ORANGE if not self.is_charged else (255, 0, 0)
-            pygame.draw.rect(surface, charge_color, 
-                           (self.x - 25, self.y + self.height // 2 + 10, charge_width, 5))
-        
-        # Draw health bar
-        bar_width = 60
-        bar_height = 8
-        bar_x = self.x - bar_width // 2
-        bar_y = self.y - self.height // 2 - 15
-        
-        # Background (red)
-        pygame.draw.rect(surface, (100, 0, 0), (bar_x, bar_y, bar_width, bar_height))
-        # Health (green)
-        health_width = (self.health / self.max_health) * bar_width
-        if health_width > 0:
-            pygame.draw.rect(surface, (0, 255, 0), (bar_x, bar_y, health_width, bar_height))
-        # Border
-        pygame.draw.rect(surface, WHITE, (bar_x, bar_y, bar_width, bar_height), 1)
-
-
-# Bullet class
-class Bullet:
-    def __init__(self, x, y, is_heavy=False):
-        self.x = x
-        self.y = y
-        self.is_heavy = is_heavy
-        if is_heavy:
-            self.width = 10
-            self.height = 30
-            self.speed = 12
-            self.color = ORANGE
-            self.damage = 2  # Double damage
-        else:
-            self.width = 4
-            self.height = 15
-            self.speed = 10
-            self.color = BRIGHT_SILVER
-            self.damage = 1
-    
-    def move(self):
-        self.y -= self.speed
-    
-    def draw(self, surface):
-        if self.is_heavy:
-            # Heavy bullet with glow effect
-            pygame.draw.rect(surface, self.color, 
-                           (self.x - self.width // 2, self.y, self.width, self.height))
-            pygame.draw.rect(surface, YELLOW, 
-                           (self.x - 2, self.y, 4, self.height))
-        else:
-            pygame.draw.rect(surface, self.color, 
-                           (self.x - self.width // 2, self.y, self.width, self.height))
-    
-    def is_off_screen(self):
-        return self.y < -self.height
-
-
-# Alien class
-class Alien:
-    def __init__(self, x, y, pattern_type=0):
-        self.width = 40
-        self.height = 30
-        self.x = x
-        self.y = y
-        self.start_x = x
-        self.pattern_type = pattern_type
-        self.pattern_offset = 0
-        self.speed = 2
-        self.color = ALIEN_GREEN if pattern_type == 0 else ALIEN_RED
-        
-        # Health
-        self.max_health = 10
-        self.health = self.max_health
-        
-    def update(self):
-        self.pattern_offset += 1
-        
-        if self.pattern_type == 0:
-            # Horizontal zigzag pattern
-            self.x = self.start_x + math.sin(self.pattern_offset * 0.05) * 100
-        elif self.pattern_type == 1:
-            # Simple left-right sweep
-            self.x = self.start_x + math.sin(self.pattern_offset * 0.03) * 80
-        elif self.pattern_type == 2:
-            # Figure-8 pattern
-            self.x = self.start_x + math.sin(self.pattern_offset * 0.04) * 60
-            self.y += math.sin(self.pattern_offset * 0.08) * 0.5
-        
-        # Keep within screen bounds
-        self.x = max(self.width, min(SCREEN_WIDTH - self.width, self.x))
-    
-    def draw(self, surface):
-        # Draw alien body (oval shape)
-        pygame.draw.ellipse(surface, self.color, 
-                          (self.x - self.width // 2, self.y - self.height // 2,
-                           self.width, self.height), 2)
-        
-        # Draw eyes
-        pygame.draw.circle(surface, (255, 255, 0), (self.x - 8, self.y - 5), 4)
-        pygame.draw.circle(surface, (255, 255, 0), (self.x + 8, self.y - 5), 4)
-        pygame.draw.circle(surface, (0, 0, 0), (self.x - 8, self.y - 5), 2)
-        pygame.draw.circle(surface, (0, 0, 0), (self.x + 8, self.y - 5), 2)
-        
-        # Draw antennae
-        pygame.draw.line(surface, self.color, (self.x - 10, self.y - self.height // 2),
-                        (self.x - 15, self.y - self.height), 2)
-        pygame.draw.line(surface, self.color, (self.x + 10, self.y - self.height // 2),
-                        (self.x + 15, self.y - self.height), 2)
-        pygame.draw.circle(surface, self.color, (self.x - 15, self.y - self.height), 3)
-        pygame.draw.circle(surface, self.color, (self.x + 15, self.y - self.height), 3)
-
-
-# Enemy bullet class
-class EnemyBullet:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-        self.width = 6
-        self.height = 12
-        self.speed = 4
-        self.color = ENEMY_BULLET
-        self.damage = 1
-    
-    def move(self):
-        self.y += self.speed
-    
-    def draw(self, surface):
-        pygame.draw.rect(surface, self.color,
-                        (self.x - self.width // 2, self.y, self.width, self.height))
-        pygame.draw.rect(surface, (255, 150, 150),
-                        (self.x - 2, self.y, 2, self.height))
-    
-    def is_off_screen(self):
-        return self.y > SCREEN_HEIGHT
-
-
-# Create ship
-ship = Ship()
-
-# Bullets list
-bullets = []
-
-# Create aliens in top third
-aliens = []
-for i in range(5):
-    aliens.append(Alien(150 + i * 150, 80, i % 3))
-
 # Enemy bullets list
 enemy_bullets = []
 
+# Shared alien formation direction
+alien_direction = 1
+
 # Auto-fire timer
-AUTO_FIRE_DELAY = 15  # Frames between auto-shots
 auto_fire_counter = 0
 
+game_over = False
+
 # Main game loop
-running = True
 while running:
-    # Event handling
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-        elif event.type == pygame.KEYUP:
-            if event.key == pygame.K_SPACE:
-                # Release charge - fire heavy attack if charged
-                if ship.release_charge():
-                    bullets.append(Bullet(ship.x, ship.y - ship.height // 2, is_heavy=True))
-    
-    # Get pressed keys
-    keys = pygame.key.get_pressed()
-    
-    # Handle charging
-    if keys[pygame.K_SPACE]:
-        ship.start_charge()
-    ship.update_charge()
-    
-    # Move ship
-    ship.move(keys)
-    
-    # Auto-fire bullets (constant firing)
-    auto_fire_counter += 1
-    if auto_fire_counter >= AUTO_FIRE_DELAY:
-        auto_fire_counter = 0
-        # Don't auto-fire if fully charged (wait for release)
-        if not ship.is_charged:
-            bullets.append(Bullet(ship.x, ship.y - ship.height // 2, is_heavy=False))
-    
-    # Move bullets and check collision with aliens
-    for bullet in bullets[:]:
-        bullet.move()
-        if bullet.is_off_screen():
-            bullets.remove(bullet)
-        else:
-            # Check collision with aliens
-            for alien in aliens[:]:
-                if (abs(bullet.x - alien.x) < (bullet.width + alien.width) // 2 and
-                    bullet.y < alien.y + alien.height // 2 and
-                    bullet.y + bullet.height > alien.y - alien.height // 2):
-                    alien.health -= bullet.damage
-                    bullets.remove(bullet)
-                    if alien.health <= 0:
+    if not game_over:
+        # Event handling
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYUP:
+                if event.key == pygame.K_SPACE:
+                    # Release charge - fire heavy attack if charged
+                    if player_ship.release_charge():
+                        bullets.append(bullet_module.Bullet(player_ship.x, player_ship.y - player_ship.height // 2, is_heavy=True))
+
+        # Get pressed keys
+        keys = pygame.key.get_pressed()
+
+        # Handle charging
+        if keys[pygame.K_SPACE]:
+            player_ship.start_charge()
+        player_ship.update_charge()
+
+        # Move ship
+        player_ship.move(keys)
+
+        # Auto-fire bullets (constant firing)
+        auto_fire_counter += 1
+        if auto_fire_counter >= settings.AUTO_FIRE_DELAY:
+            auto_fire_counter = 0
+            # Don't auto-fire if fully charged (wait for release)
+            if not player_ship.is_charged:
+                bullets.append(bullet_module.Bullet(player_ship.x, player_ship.y - player_ship.height // 2, is_heavy=False))
+
+        # Move bullets and check collision with aliens
+        for bullet in bullets[:]:
+            bullet.move()
+            if bullet.is_off_screen():
+                bullets.remove(bullet)
+            else:
+                # Check collision with aliens
+                for alien in aliens[:]:
+                    if (abs(bullet.x - alien.x) < (bullet.width + alien.width) // 2 and
+                        bullet.y < alien.y + alien.height // 2 and
+                        bullet.y + bullet.height > alien.y - alien.height // 2):
                         aliens.remove(alien)
-                    break
-    
-    # Update aliens
-    for alien in aliens:
-        alien.update()
-    
-    # Alien fires projectiles (slow rate - every 90 frames)
-    if random.randint(1, 90) == 1:
-        firing_alien = random.choice(aliens)
-        enemy_bullets.append(EnemyBullet(firing_alien.x, firing_alien.y + firing_alien.height // 2))
-    
-    # Move enemy bullets and check collision with ship
-    for eb in enemy_bullets[:]:
-        eb.move()
-        if eb.is_off_screen():
-            enemy_bullets.remove(eb)
-        else:
-            # Check collision with ship
-            if (abs(eb.x - ship.x) < (eb.width + ship.width) // 2 and
-                eb.y < ship.y + ship.height // 2 and
-                eb.y + eb.height > ship.y - ship.height // 2):
-                ship.health -= eb.damage
+                        bullets.remove(bullet)
+                        score += 100
+                        break
+
+        # Advance level when all aliens are destroyed
+        if not aliens:
+            level += 1
+            alien_direction = 1
+            alien_speed = settings.ALIEN_SPEED + (level - 1)
+            aliens = create_alien_formation(level, alien_speed)
+
+        # Move alien formation together and reverse at screen edges
+        if aliens:
+            current_speed = aliens[0].speed
+            left_edge = min(alien.x - alien.width // 2 for alien in aliens)
+            right_edge = max(alien.x + alien.width // 2 for alien in aliens)
+            next_left = left_edge + current_speed * alien_direction
+            next_right = right_edge + current_speed * alien_direction
+            if next_left < 0 or next_right > settings.SCREEN_WIDTH:
+                alien_direction *= -1
+                for alien in aliens:
+                    alien.y += settings.ALIEN_HEIGHT
+        for alien in aliens:
+            alien.update()
+
+        # Check if any alien reached the bottom
+        for alien in aliens:
+            if alien.y > settings.SCREEN_HEIGHT:
+                game_over = True
+                break
+
+        # Alien fires projectiles (slow rate)
+        if random.randint(1, settings.ALIEN_FIRE_RATE) == 1:
+            firing_alien = random.choice(aliens)
+            enemy_bullets.append(EnemyBullet(firing_alien.x, firing_alien.y + firing_alien.height // 2))
+
+        # Move enemy bullets and check collision with ship
+        for eb in enemy_bullets[:]:
+            eb.move()
+            if eb.is_off_screen():
                 enemy_bullets.remove(eb)
-                if ship.health <= 0:
-                    running = False  # Game over
-    
-    # Draw midnight purple background
-    screen.fill(MIDNIGHT_PURPLE)
-    
-    # Draw stars for galaxy effect
-    for star in stars:
-        brightness = (star['brightness'] + random.randint(-10, 10)) % 256
-        brightness = max(100, min(255, brightness))
-        color = list(star['color'])
-        color = tuple(min(255, c * brightness // 255) for c in star['color'])
-        pygame.draw.circle(screen, color, (star['x'], star['y']), star['size'])
-    
-    # Draw ship
-    ship.draw(screen)
-    
-    # Draw bullets
-    for bullet in bullets:
-        bullet.draw(screen)
-    
-    # Draw aliens
-    for alien in aliens:
-        alien.draw(screen)
-    
-    # Draw enemy bullets
-    for eb in enemy_bullets:
-        eb.draw(screen)
-    
-    # Update display
-    pygame.display.flip()
-    
-    # Maintain 60 FPS
-    clock.tick(FPS)
+            else:
+                # Check collision with ship
+                if (abs(eb.x - player_ship.x) < (eb.width + player_ship.width) // 2 and
+                    eb.y < player_ship.y + player_ship.height // 2 and
+                    eb.y + eb.height > player_ship.y - player_ship.height // 2):
+                    player_ship.health -= eb.damage
+                    enemy_bullets.remove(eb)
+                    if player_ship.health <= 0:
+                        game_over = True
+
+        # Draw midnight purple background
+        screen.fill(settings.MIDNIGHT_PURPLE)
+
+        # Draw stars for galaxy effect
+        for star in stars:
+            brightness = (star['brightness'] + random.randint(-10, 10)) % 256
+            brightness = max(100, min(255, brightness))
+            color = list(star['color'])
+            color = tuple(min(255, c * brightness // 255) for c in star['color'])
+            pygame.draw.circle(screen, color, (star['x'], star['y']), star['size'])
+
+        # Draw score and level indicators
+        score_text = level_font.render(f"SCORE: {score}", True, settings.WHITE)
+        screen.blit(score_text, (10, 10))
+        level_text = level_font.render(f"LEVEL {level}", True, settings.WHITE)
+        screen.blit(level_text, (10, 40))
+
+        # Draw ship
+        player_ship.draw(screen)
+
+        # Draw bullets
+        for bullet in bullets:
+            bullet.draw(screen)
+
+        # Draw aliens
+        for alien in aliens:
+            alien.draw(screen)
+
+        # Draw enemy bullets
+        for eb in enemy_bullets:
+            eb.draw(screen)
+
+        # Update display
+        pygame.display.flip()
+
+        # Maintain 60 FPS
+        clock.tick(settings.FPS)
+    else:
+        screen.fill(settings.MIDNIGHT_PURPLE)
+        for star in stars:
+            brightness = (star['brightness'] + random.randint(-10, 10)) % 256
+            brightness = max(100, min(255, brightness))
+            color = list(star['color'])
+            color = tuple(min(255, c * brightness // 255) for c in star['color'])
+            pygame.draw.circle(screen, color, (star['x'], star['y']), star['size'])
+
+        game_over_text = game_over_font.render("GAME OVER", True, settings.WHITE)
+        final_score_text = level_font.render(f"FINAL SCORE: {score}", True, settings.WHITE)
+        restart_text = level_font.render("PRESS R TO RESTART", True, settings.WHITE)
+
+        center_x = settings.SCREEN_WIDTH // 2
+        screen.blit(game_over_text, game_over_text.get_rect(center=(center_x, 220)))
+        screen.blit(final_score_text, final_score_text.get_rect(center=(center_x, 300)))
+        screen.blit(restart_text, restart_text.get_rect(center=(center_x, 360)))
+        pygame.display.flip()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:
+                    reset_game()
+                    game_over = False
+        clock.tick(settings.FPS)
 
 # Quit pygame
 pygame.quit()
